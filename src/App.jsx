@@ -315,6 +315,11 @@ const EditIcon = (p) => <Icon {...p} d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2
 const CheckIcon = (p) => <Icon {...p} d="M20 6L9 17l-5-5" />;
 const LinkIcon = (p) => <Icon {...p} d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />;
 const ExternalLinkIcon = (p) => <Icon {...p} d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />;
+const HistoryIcon = (p) => (
+  <svg width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>
+  </svg>
+);
 
 const HeartIcon = ({ filled, size = 20, color }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color || COLORS.heart : "none"} stroke={color || COLORS.heart} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -874,6 +879,9 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
   const [pickerOpen, setPickerOpen] = useState(false);
   const [pickerInitialDay, setPickerInitialDay] = useState(null);
   const [detailRecipe, setDetailRecipe] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyPlans, setHistoryPlans] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const today = formatDate(new Date());
 
@@ -897,6 +905,39 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
     }
     setWeekPlan(newPlan);
     saveWeekPlan(newPlan);
+  };
+
+  const openHistory = async () => {
+    setHistoryLoading(true);
+    setHistoryOpen(true);
+    const allPlans = await dbGetAll("weekPlans");
+    // Sort by weekStart descending, exclude current week
+    const currentWeekStart = formatDate(weekMonday);
+    const sorted = allPlans
+      .filter((p) => p.days.some((d) => d.recipeId))
+      .sort((a, b) => b.weekStart.localeCompare(a.weekStart));
+    setHistoryPlans(sorted);
+    setHistoryLoading(false);
+  };
+
+  const jumpToWeek = (weekStart) => {
+    const monday = new Date(weekStart + "T00:00:00");
+    setWeekMonday(monday);
+    loadWeekPlan(monday);
+    setHistoryOpen(false);
+  };
+
+  const copyFromHistory = async (plan) => {
+    const newPlan = {
+      ...weekPlan,
+      days: weekPlan.days.map((day, idx) => ({
+        ...day,
+        recipeId: plan.days[idx]?.recipeId || null,
+      })),
+    };
+    setWeekPlan(newPlan);
+    saveWeekPlan(newPlan);
+    setHistoryOpen(false);
   };
 
   const clearDay = (idx) => {
@@ -971,6 +1012,9 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
           </button>
           <button className="btn btn-sm btn-secondary" onClick={printPlan}>
             <PrinterIcon size={16} /> Drukuj
+          </button>
+          <button className="btn btn-sm btn-secondary" onClick={openHistory}>
+            <HistoryIcon size={16} /> Historia
           </button>
         </div>
       </div>
@@ -1049,6 +1093,111 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
           onEdit={() => {}}
           onToggleFavorite={() => {}}
         />
+      </Modal>
+
+      {/* History modal */}
+      <Modal isOpen={historyOpen} onClose={() => setHistoryOpen(false)} title="📋 Historia tygodni" wide>
+        {historyLoading ? (
+          <div style={{ textAlign: "center", padding: 40, color: COLORS.textMuted }}>Ładowanie...</div>
+        ) : historyPlans.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 40, color: COLORS.textMuted }}>
+            <p style={{ fontSize: 40, marginBottom: 12 }}>📋</p>
+            <p>Brak zapisanych planów. Zaplanuj pierwszy tydzień!</p>
+          </div>
+        ) : (
+          <div style={{ maxHeight: "60vh", overflowY: "auto" }} className="scrollbar-hidden">
+            {historyPlans.map((plan) => {
+              const planMonday = new Date(plan.weekStart + "T00:00:00");
+              const planSunday = addDays(planMonday, 6);
+              const isCurrentWeek = plan.weekStart === formatDate(weekMonday);
+              const filledDays = plan.days.filter((d) => d.recipeId).length;
+              return (
+                <div
+                  key={plan.id}
+                  className="card"
+                  style={{
+                    marginBottom: 12,
+                    padding: 0,
+                    overflow: "hidden",
+                    border: isCurrentWeek ? `2px solid ${COLORS.primary}` : undefined,
+                  }}
+                >
+                  {/* Week header */}
+                  <div style={{
+                    display: "flex", justifyContent: "space-between", alignItems: "center",
+                    padding: "12px 16px",
+                    background: isCurrentWeek ? COLORS.primaryPale : COLORS.bgAlt,
+                    borderBottom: `1px solid ${COLORS.borderLight}`,
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: 15 }}>
+                        {formatDatePL(planMonday)} — {formatDatePL(planSunday)}
+                      </span>
+                      {isCurrentWeek && (
+                        <span style={{ marginLeft: 8, fontSize: 12, color: COLORS.primary, fontWeight: 600 }}>
+                          (bieżący tydzień)
+                        </span>
+                      )}
+                      <span style={{ marginLeft: 8, fontSize: 12, color: COLORS.textMuted }}>
+                        {filledDays}/7 dni zaplanowanych
+                      </span>
+                    </div>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {!isCurrentWeek && (
+                        <button className="btn btn-sm btn-secondary" onClick={() => copyFromHistory(plan)} title="Skopiuj ten plan do bieżącego tygodnia">
+                          <CopyIcon size={14} /> Kopiuj
+                        </button>
+                      )}
+                      <button className="btn btn-sm btn-primary" onClick={() => jumpToWeek(plan.weekStart)}>
+                        Przejdź
+                      </button>
+                    </div>
+                  </div>
+                  {/* Days row */}
+                  <div style={{ display: "flex", gap: 0 }}>
+                    {plan.days.map((day, idx) => {
+                      const recipe = day.recipeId ? recipes.find((r) => r.id === day.recipeId) : null;
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            flex: 1, padding: "10px 6px", textAlign: "center",
+                            borderRight: idx < 6 ? `1px solid ${COLORS.borderLight}` : "none",
+                            minWidth: 0,
+                          }}
+                        >
+                          <div style={{ fontSize: 11, fontWeight: 700, color: COLORS.textMuted, marginBottom: 6 }}>
+                            {DAYS_SHORT[idx]}
+                          </div>
+                          {recipe ? (
+                            <div>
+                              {recipe.imageUrl ? (
+                                <div style={{ width: 40, height: 40, borderRadius: 8, overflow: "hidden", margin: "0 auto 4px" }}>
+                                  <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                                </div>
+                              ) : (
+                                <div style={{ width: 40, height: 40, borderRadius: 8, background: COLORS.primaryPale, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, margin: "0 auto 4px" }}>
+                                  {getCategoryEmoji(recipe.category)}
+                                </div>
+                              )}
+                              <p style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={recipe.name}>
+                                {recipe.name}
+                              </p>
+                            </div>
+                          ) : (
+                            <div style={{ width: 40, height: 40, borderRadius: 8, border: `1px dashed ${COLORS.border}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 4px", color: COLORS.borderLight }}>
+                              —
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </Modal>
     </div>
   );
