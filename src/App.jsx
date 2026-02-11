@@ -734,15 +734,29 @@ const RecipeDetail = ({ recipe, onClose, onEdit, onToggleFavorite }) => {
 // ============================================================
 // RECIPE PICKER MODAL (for planner)
 // ============================================================
-const RecipePicker = ({ recipes, onPick, onClose }) => {
+const RecipePicker = ({ recipes, onPick, onClose, weekPlan }) => {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("");
+  const [selectedRecipeId, setSelectedRecipeId] = useState(null);
+  const [selectedDays, setSelectedDays] = useState([]);
 
   const filtered = recipes.filter((r) => {
     if (search && !r.name.toLowerCase().includes(search.toLowerCase())) return false;
     if (filterCat && r.category !== filterCat) return false;
     return true;
   });
+
+  const toggleDay = (idx) => {
+    setSelectedDays((prev) => prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]);
+  };
+
+  const confirmSelection = () => {
+    if (!selectedRecipeId || selectedDays.length === 0) return;
+    onPick(selectedRecipeId, selectedDays);
+    onClose();
+  };
+
+  const selectedRecipe = recipes.find((r) => r.id === selectedRecipeId);
 
   return (
     <div>
@@ -765,6 +779,53 @@ const RecipePicker = ({ recipes, onPick, onClose }) => {
           {CATEGORIES.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
       </div>
+
+      {/* Day selector - shown when recipe is selected */}
+      {selectedRecipeId && (
+        <div style={{ marginBottom: 20, padding: 16, background: COLORS.primaryPale, borderRadius: 14 }} className="pop-in">
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>{selectedRecipe?.name}</span>
+              <span style={{ color: COLORS.textMuted, fontSize: 13, marginLeft: 8 }}>— wybierz dni:</span>
+            </div>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setSelectedRecipeId(null); setSelectedDays([]); }}>
+              <XIcon size={16} /> Zmień danie
+            </button>
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            {DAYS_SHORT.map((dayName, idx) => {
+              const isSelected = selectedDays.includes(idx);
+              const hasRecipe = weekPlan?.days[idx]?.recipeId;
+              return (
+                <button
+                  key={idx}
+                  className={`btn btn-sm ${isSelected ? "btn-primary" : "btn-secondary"}`}
+                  style={{ minWidth: 52, position: "relative" }}
+                  onClick={() => toggleDay(idx)}
+                >
+                  {dayName}
+                  {hasRecipe && !isSelected && (
+                    <span style={{ position: "absolute", top: -4, right: -4, width: 8, height: 8, borderRadius: "50%", background: COLORS.primary, border: "2px solid white" }} />
+                  )}
+                </button>
+              );
+            })}
+            <button
+              className="btn btn-sm btn-ghost"
+              onClick={() => setSelectedDays(selectedDays.length === 7 ? [] : [0, 1, 2, 3, 4, 5, 6])}
+              style={{ fontSize: 12 }}
+            >
+              {selectedDays.length === 7 ? "Odznacz wszystkie" : "Zaznacz wszystkie"}
+            </button>
+          </div>
+          {selectedDays.length > 0 && (
+            <button className="btn btn-primary" onClick={confirmSelection}>
+              <CheckIcon size={16} /> Przypisz do {selectedDays.length} {selectedDays.length === 1 ? "dnia" : selectedDays.length < 5 ? "dni" : "dni"}
+            </button>
+          )}
+        </div>
+      )}
+
       {filtered.length === 0 ? (
         <div style={{ textAlign: "center", padding: 40, color: COLORS.textMuted }}>
           <p style={{ fontSize: 40, marginBottom: 12 }}>🍳</p>
@@ -772,31 +833,34 @@ const RecipePicker = ({ recipes, onPick, onClose }) => {
         </div>
       ) : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, maxHeight: 400, overflowY: "auto" }} className="scrollbar-hidden">
-          {filtered.map((r) => (
-            <div
-              key={r.id}
-              className="card pop-in"
-              style={{ cursor: "pointer", overflow: "hidden" }}
-              onClick={() => { onPick(r.id); onClose(); }}
-            >
-              {r.imageUrl ? (
-                <div style={{ height: 100, overflow: "hidden" }}>
-                  <img src={r.imageUrl} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                </div>
-              ) : (
-                <div style={{ height: 100, background: COLORS.primaryPale, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>
-                  {getCategoryEmoji(r.category)}
-                </div>
-              )}
-              <div style={{ padding: 12 }}>
-                <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{r.name}</p>
-                <div style={{ display: "flex", gap: 6, alignItems: "center", color: COLORS.textMuted, fontSize: 12 }}>
-                  <ClockIcon size={14} /> {r.prepTime} min
-                  <span style={{ marginLeft: "auto" }}>{getCategoryEmoji(r.category)}</span>
+          {filtered.map((r) => {
+            const isSelected = r.id === selectedRecipeId;
+            return (
+              <div
+                key={r.id}
+                className="card pop-in"
+                style={{ cursor: "pointer", overflow: "hidden", outline: isSelected ? `3px solid ${COLORS.primary}` : "none", outlineOffset: -1 }}
+                onClick={() => { setSelectedRecipeId(r.id); setSelectedDays([]); }}
+              >
+                {r.imageUrl ? (
+                  <div style={{ height: 100, overflow: "hidden" }}>
+                    <img src={r.imageUrl} alt={r.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  </div>
+                ) : (
+                  <div style={{ height: 100, background: COLORS.primaryPale, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 40 }}>
+                    {getCategoryEmoji(r.category)}
+                  </div>
+                )}
+                <div style={{ padding: 12 }}>
+                  <p style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>{r.name}</p>
+                  <div style={{ display: "flex", gap: 6, alignItems: "center", color: COLORS.textMuted, fontSize: 12 }}>
+                    <ClockIcon size={14} /> {r.prepTime} min
+                    <span style={{ marginLeft: "auto" }}>{getCategoryEmoji(r.category)}</span>
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>
@@ -808,7 +872,7 @@ const RecipePicker = ({ recipes, onPick, onClose }) => {
 // ============================================================
 const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday, saveWeekPlan, loadWeekPlan }) => {
   const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerDayIdx, setPickerDayIdx] = useState(null);
+  const [pickerInitialDay, setPickerInitialDay] = useState(null);
   const [detailRecipe, setDetailRecipe] = useState(null);
 
   const today = formatDate(new Date());
@@ -825,11 +889,12 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
     loadWeekPlan(m);
   };
 
-  const assignRecipe = (recipeId) => {
-    if (pickerDayIdx === null) return;
+  const assignRecipe = (recipeId, dayIndices) => {
     const newPlan = { ...weekPlan };
     newPlan.days = [...newPlan.days];
-    newPlan.days[pickerDayIdx] = { ...newPlan.days[pickerDayIdx], recipeId };
+    for (const idx of dayIndices) {
+      newPlan.days[idx] = { ...newPlan.days[idx], recipeId };
+    }
     setWeekPlan(newPlan);
     saveWeekPlan(newPlan);
   };
@@ -960,7 +1025,7 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
                     </button>
                   </div>
                 ) : (
-                  <div className="empty-slot" onClick={() => { setPickerDayIdx(idx); setPickerOpen(true); }}>
+                  <div className="empty-slot" onClick={() => { setPickerInitialDay(idx); setPickerOpen(true); }}>
                     <PlusIcon size={24} />
                     <span style={{ fontSize: 13, fontWeight: 500 }}>Dodaj obiad</span>
                   </div>
@@ -972,8 +1037,8 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
       </div>
 
       {/* Recipe picker modal */}
-      <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title={`Wybierz obiad — ${pickerDayIdx !== null ? DAYS_PL[pickerDayIdx] : ""}`} wide>
-        <RecipePicker recipes={recipes} onPick={assignRecipe} onClose={() => setPickerOpen(false)} />
+      <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title="Wybierz obiad" wide>
+        <RecipePicker recipes={recipes} onPick={assignRecipe} onClose={() => setPickerOpen(false)} weekPlan={weekPlan} />
       </Modal>
 
       {/* Recipe detail modal */}
