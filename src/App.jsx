@@ -126,7 +126,11 @@ function addDays(d, n) {
 }
 
 function formatDate(d) {
-  return d.toISOString().split("T")[0];
+  const dt = new Date(d);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const day = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 function formatDatePL(d) {
@@ -148,6 +152,31 @@ function createEmptyWeekPlan(monday) {
 
 function getCategoryEmoji(cat) {
   return CATEGORIES.find((c) => c.value === cat)?.emoji || "🍽️";
+}
+
+const MONTHS_PL = ["Styczeń", "Luty", "Marzec", "Kwiecień", "Maj", "Czerwiec", "Lipiec", "Sierpień", "Wrzesień", "Październik", "Listopad", "Grudzień"];
+
+function getMonthDays(year, month) {
+  // Returns array of dates for calendar grid (includes padding from prev/next months)
+  const firstDay = new Date(year, month, 1);
+  const lastDay = new Date(year, month + 1, 0);
+  const startDow = (firstDay.getDay() + 6) % 7; // 0=Mon
+  const days = [];
+  // Pad start
+  for (let i = startDow - 1; i >= 0; i--) {
+    const d = new Date(year, month, -i);
+    days.push({ date: d, inMonth: false });
+  }
+  // Month days
+  for (let i = 1; i <= lastDay.getDate(); i++) {
+    days.push({ date: new Date(year, month, i), inMonth: true });
+  }
+  // Pad end to fill last row
+  while (days.length % 7 !== 0) {
+    const d = new Date(year, month + 1, days.length - lastDay.getDate() - startDow + 1);
+    days.push({ date: d, inMonth: false });
+  }
+  return days;
 }
 
 // ============================================================
@@ -318,6 +347,11 @@ const ExternalLinkIcon = (p) => <Icon {...p} d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01
 const HistoryIcon = (p) => (
   <svg width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
     <path d="M3 3v5h5"/><path d="M3.05 13A9 9 0 1 0 6 5.3L3 8"/><path d="M12 7v5l4 2"/>
+  </svg>
+);
+const GridIcon = (p) => (
+  <svg width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
   </svg>
 );
 
@@ -882,6 +916,9 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyPlans, setHistoryPlans] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [viewMode, setViewMode] = useState("week"); // "week" | "month"
+  const [monthDate, setMonthDate] = useState(new Date());
+  const [monthPlans, setMonthPlans] = useState({});
 
   const today = formatDate(new Date());
 
@@ -938,6 +975,50 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
     setWeekPlan(newPlan);
     saveWeekPlan(newPlan);
     setHistoryOpen(false);
+  };
+
+  // Month view data
+  const loadMonthPlans = useCallback(async () => {
+    const allPlans = await dbGetAll("weekPlans");
+    const map = {};
+    for (const plan of allPlans) {
+      for (const day of plan.days) {
+        if (day.recipeId) {
+          map[day.date] = day.recipeId;
+        }
+      }
+    }
+    // Override with current weekPlan from state (most up-to-date)
+    if (weekPlan) {
+      for (const day of weekPlan.days) {
+        if (day.recipeId) {
+          map[day.date] = day.recipeId;
+        } else {
+          delete map[day.date];
+        }
+      }
+    }
+    setMonthPlans(map);
+  }, [weekPlan]);
+
+  useEffect(() => {
+    if (viewMode === "month") {
+      loadMonthPlans();
+    }
+  }, [viewMode, monthDate, loadMonthPlans]);
+
+  const navigateMonth = (dir) => {
+    setMonthDate((prev) => new Date(prev.getFullYear(), prev.getMonth() + dir, 1));
+  };
+
+  const monthDays = useMemo(() => getMonthDays(monthDate.getFullYear(), monthDate.getMonth()), [monthDate]);
+  const monthLabel = `${MONTHS_PL[monthDate.getMonth()]} ${monthDate.getFullYear()}`;
+
+  const switchToWeekFromDay = (date) => {
+    const monday = getMonday(date);
+    setWeekMonday(monday);
+    loadWeekPlan(monday);
+    setViewMode("week");
   };
 
   const clearDay = (idx) => {
@@ -999,86 +1080,176 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
 
   return (
     <div className="fade-in">
-      {/* Week navigation */}
+      {/* Header */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-        <h1 style={{ fontSize: 28 }}>📅 Plan tygodnia</h1>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button className="btn btn-ghost" onClick={() => navigateWeek(-1)}><ChevronLeft /></button>
-          <span style={{ fontWeight: 600, fontSize: 15, minWidth: 180, textAlign: "center" }}>{weekLabel}</span>
-          <button className="btn btn-ghost" onClick={() => navigateWeek(1)}><ChevronRight /></button>
-          <button className="btn btn-sm btn-secondary" onClick={goToday}>Dziś</button>
-          <button className="btn btn-sm btn-secondary" onClick={copyLastWeek}>
-            <CopyIcon size={16} /> Kopiuj z zeszłego tygodnia
-          </button>
-          <button className="btn btn-sm btn-secondary" onClick={printPlan}>
-            <PrinterIcon size={16} /> Drukuj
-          </button>
-          <button className="btn btn-sm btn-secondary" onClick={openHistory}>
-            <HistoryIcon size={16} /> Historia
-          </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <h1 style={{ fontSize: 28 }}>📅 {viewMode === "week" ? "Plan tygodnia" : "Plan miesiąca"}</h1>
+          {/* View toggle */}
+          <div style={{ display: "flex", background: COLORS.borderLight, borderRadius: 10, padding: 3 }}>
+            <button
+              className="btn btn-sm"
+              style={{ background: viewMode === "week" ? COLORS.primary : "transparent", color: viewMode === "week" ? "white" : COLORS.textMuted, padding: "5px 14px" }}
+              onClick={() => setViewMode("week")}
+            >
+              Tydzień
+            </button>
+            <button
+              className="btn btn-sm"
+              style={{ background: viewMode === "month" ? COLORS.primary : "transparent", color: viewMode === "month" ? "white" : COLORS.textMuted, padding: "5px 14px" }}
+              onClick={() => { setViewMode("month"); setMonthDate(new Date(weekMonday)); }}
+            >
+              Miesiąc
+            </button>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          {viewMode === "week" ? (
+            <>
+              <button className="btn btn-ghost" onClick={() => navigateWeek(-1)}><ChevronLeft /></button>
+              <span style={{ fontWeight: 600, fontSize: 15, minWidth: 180, textAlign: "center" }}>{weekLabel}</span>
+              <button className="btn btn-ghost" onClick={() => navigateWeek(1)}><ChevronRight /></button>
+              <button className="btn btn-sm btn-secondary" onClick={goToday}>Dziś</button>
+              <button className="btn btn-sm btn-secondary" onClick={copyLastWeek}>
+                <CopyIcon size={16} /> Kopiuj z zeszłego tygodnia
+              </button>
+              <button className="btn btn-sm btn-secondary" onClick={printPlan}>
+                <PrinterIcon size={16} /> Drukuj
+              </button>
+              <button className="btn btn-sm btn-secondary" onClick={openHistory}>
+                <HistoryIcon size={16} /> Historia
+              </button>
+            </>
+          ) : (
+            <>
+              <button className="btn btn-ghost" onClick={() => navigateMonth(-1)}><ChevronLeft /></button>
+              <span style={{ fontWeight: 600, fontSize: 15, minWidth: 180, textAlign: "center" }}>{monthLabel}</span>
+              <button className="btn btn-ghost" onClick={() => navigateMonth(1)}><ChevronRight /></button>
+              <button className="btn btn-sm btn-secondary" onClick={() => setMonthDate(new Date())}>Dziś</button>
+            </>
+          )}
         </div>
       </div>
 
-      {/* Week grid */}
-      <div className="week-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 12 }}>
-        {weekPlan.days.map((day, idx) => {
-          const recipe = day.recipeId ? getRecipeById(day.recipeId) : null;
-          const isToday = day.date === today;
-          return (
-            <div
-              key={day.date}
-              className={`card ${isToday ? "today-highlight" : ""}`}
-              style={{ padding: 0, overflow: "hidden", minHeight: 200 }}
-            >
-              {/* Day header */}
-              <div style={{
-                padding: "10px 14px",
-                background: isToday ? COLORS.primaryPale : COLORS.bgAlt,
-                borderBottom: `1px solid ${COLORS.borderLight}`,
-                display: "flex", justifyContent: "space-between", alignItems: "center"
-              }}>
-                <span style={{ fontWeight: 700, fontSize: 14 }}>{DAYS_SHORT[idx]}</span>
-                <span style={{ fontSize: 13, color: COLORS.textMuted }}>{formatDatePL(day.date)}</span>
-              </div>
-
-              {/* Content */}
-              <div style={{ padding: 12 }}>
-                {recipe ? (
-                  <div className="meal-card-mini" onClick={() => setDetailRecipe(recipe)}>
-                    {recipe.imageUrl ? (
-                      <div style={{ height: 80, overflow: "hidden" }}>
-                        <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+      {viewMode === "week" ? (
+        /* ===== WEEK VIEW ===== */
+        <div className="week-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 12 }}>
+          {weekPlan.days.map((day, idx) => {
+            const recipe = day.recipeId ? getRecipeById(day.recipeId) : null;
+            const isToday = day.date === today;
+            return (
+              <div
+                key={day.date}
+                className={`card ${isToday ? "today-highlight" : ""}`}
+                style={{ padding: 0, overflow: "hidden", minHeight: 200 }}
+              >
+                <div style={{
+                  padding: "10px 14px",
+                  background: isToday ? COLORS.primaryPale : COLORS.bgAlt,
+                  borderBottom: `1px solid ${COLORS.borderLight}`,
+                  display: "flex", justifyContent: "space-between", alignItems: "center"
+                }}>
+                  <span style={{ fontWeight: 700, fontSize: 14 }}>{DAYS_SHORT[idx]}</span>
+                  <span style={{ fontSize: 13, color: COLORS.textMuted }}>{formatDatePL(day.date)}</span>
+                </div>
+                <div style={{ padding: 12 }}>
+                  {recipe ? (
+                    <div className="meal-card-mini" onClick={() => setDetailRecipe(recipe)}>
+                      {recipe.imageUrl ? (
+                        <div style={{ height: 80, overflow: "hidden" }}>
+                          <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      ) : (
+                        <div style={{ height: 80, background: COLORS.primaryPale, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36 }}>
+                          {getCategoryEmoji(recipe.category)}
+                        </div>
+                      )}
+                      <div style={{ padding: "8px 10px" }}>
+                        <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, lineHeight: 1.3 }}>{recipe.name}</p>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: COLORS.textMuted }}>
+                          <span style={{ display: "flex", alignItems: "center", gap: 4 }}><ClockIcon size={12} /> {recipe.prepTime}m</span>
+                        </div>
                       </div>
-                    ) : (
-                      <div style={{ height: 80, background: COLORS.primaryPale, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36 }}>
-                        {getCategoryEmoji(recipe.category)}
-                      </div>
-                    )}
-                    <div style={{ padding: "8px 10px" }}>
-                      <p style={{ fontWeight: 600, fontSize: 13, marginBottom: 4, lineHeight: 1.3 }}>{recipe.name}</p>
-                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, color: COLORS.textMuted }}>
-                        <span style={{ display: "flex", alignItems: "center", gap: 4 }}><ClockIcon size={12} /> {recipe.prepTime}m</span>
-                      </div>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ position: "absolute", top: 4, right: 4, padding: 4, borderRadius: 8, background: "rgba(255,255,255,0.85)" }}
+                        onClick={(e) => { e.stopPropagation(); clearDay(idx); }}
+                      >
+                        <XIcon size={14} />
+                      </button>
                     </div>
-                    <button
-                      className="btn btn-ghost btn-sm"
-                      style={{ position: "absolute", top: 4, right: 4, padding: 4, borderRadius: 8, background: "rgba(255,255,255,0.85)" }}
-                      onClick={(e) => { e.stopPropagation(); clearDay(idx); }}
-                    >
-                      <XIcon size={14} />
-                    </button>
-                  </div>
-                ) : (
-                  <div className="empty-slot" onClick={() => { setPickerInitialDay(idx); setPickerOpen(true); }}>
-                    <PlusIcon size={24} />
-                    <span style={{ fontSize: 13, fontWeight: 500 }}>Dodaj obiad</span>
-                  </div>
-                )}
+                  ) : (
+                    <div className="empty-slot" onClick={() => { setPickerInitialDay(idx); setPickerOpen(true); }}>
+                      <PlusIcon size={24} />
+                      <span style={{ fontSize: 13, fontWeight: 500 }}>Dodaj obiad</span>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      ) : (
+        /* ===== MONTH VIEW ===== */
+        <div>
+          {/* Day headers */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+            {DAYS_SHORT.map((d) => (
+              <div key={d} style={{ textAlign: "center", fontWeight: 700, fontSize: 12, color: COLORS.textMuted, padding: "8px 0", textTransform: "uppercase", letterSpacing: 0.5 }}>
+                {d}
+              </div>
+            ))}
+          </div>
+          {/* Calendar grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+            {monthDays.map(({ date, inMonth }, i) => {
+              const dateStr = formatDate(date);
+              const recipeId = monthPlans[dateStr];
+              const recipe = recipeId ? recipes.find((r) => r.id === recipeId) : null;
+              const isToday = dateStr === today;
+              const dayNum = date.getDate();
+              return (
+                <div
+                  key={i}
+                  onClick={() => switchToWeekFromDay(date)}
+                  style={{
+                    minHeight: 90,
+                    padding: 6,
+                    borderRadius: 12,
+                    background: isToday ? COLORS.primaryPale : inMonth ? COLORS.card : COLORS.bg,
+                    border: isToday ? `2px solid ${COLORS.primary}` : `1px solid ${inMonth ? COLORS.borderLight : "transparent"}`,
+                    opacity: inMonth ? 1 : 0.4,
+                    cursor: "pointer",
+                    transition: "all 0.15s",
+                    overflow: "hidden",
+                  }}
+                  onMouseEnter={(e) => { if (inMonth) e.currentTarget.style.boxShadow = COLORS.shadow; }}
+                  onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
+                >
+                  <div style={{ fontSize: 12, fontWeight: isToday ? 800 : 600, color: isToday ? COLORS.primary : COLORS.textMuted, marginBottom: 4 }}>
+                    {dayNum}
+                  </div>
+                  {recipe ? (
+                    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      {recipe.imageUrl ? (
+                        <div style={{ width: 28, height: 28, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
+                          <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                        </div>
+                      ) : (
+                        <span style={{ fontSize: 16 }}>{getCategoryEmoji(recipe.category)}</span>
+                      )}
+                      <span style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {recipe.name}
+                      </span>
+                    </div>
+                  ) : inMonth ? (
+                    <div style={{ fontSize: 11, color: COLORS.borderLight, textAlign: "center", marginTop: 8 }}>—</div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Recipe picker modal */}
       <Modal isOpen={pickerOpen} onClose={() => setPickerOpen(false)} title="Wybierz obiad" wide>
