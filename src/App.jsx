@@ -342,6 +342,13 @@ const ClockIcon = (p) => <Icon {...p} d="M12 2a10 10 0 100 20 10 10 0 000-20zM12
 const CopyIcon = (p) => <Icon {...p} d="M20 9h-9a2 2 0 00-2 2v9a2 2 0 002 2h9a2 2 0 002-2v-9a2 2 0 00-2-2zM5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />;
 const EditIcon = (p) => <Icon {...p} d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />;
 const CheckIcon = (p) => <Icon {...p} d="M20 6L9 17l-5-5" />;
+const DownloadIcon = (p) => <Icon {...p} d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3" />;
+const UploadIcon = (p) => <Icon {...p} d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12" />;
+const SettingsIcon = (p) => (
+  <svg width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
+  </svg>
+);
 const LinkIcon = (p) => <Icon {...p} d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />;
 const ExternalLinkIcon = (p) => <Icon {...p} d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />;
 const HistoryIcon = (p) => (
@@ -2026,6 +2033,9 @@ export default function App() {
   const [weekMonday, setWeekMonday] = useState(getMonday(new Date()));
   const [knownIngredients, setKnownIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [importStatus, setImportStatus] = useState(null); // { type: "success"|"error", message }
+  const fileInputRef = useRef(null);
 
   const refreshKnownIngredients = useCallback(async () => {
     const all = await dbGetAll("knownIngredients");
@@ -2056,6 +2066,109 @@ export default function App() {
       setLoading(false);
     })();
   }, []);
+
+  // === EXPORT ===
+  const exportData = async () => {
+    const allRecipes = await dbGetAll("recipes");
+    const allPlans = await dbGetAll("weekPlans");
+    const allIngredients = await dbGetAll("knownIngredients");
+    const data = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      recipes: allRecipes,
+      weekPlans: allPlans,
+      knownIngredients: allIngredients,
+    };
+    const json = JSON.stringify(data, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `meal-planner-backup-${formatDate(new Date())}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    setSettingsOpen(false);
+  };
+
+  // === IMPORT ===
+  const importData = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+      if (!data.recipes || !data.weekPlans) {
+        throw new Error("Nieprawidłowy format pliku");
+      }
+      // Confirm
+      const recipeCount = data.recipes?.length || 0;
+      const planCount = data.weekPlans?.length || 0;
+      const ok = confirm(
+        `Importować dane?\n\n` +
+        `📖 ${recipeCount} przepisów\n` +
+        `📅 ${planCount} planów tygodniowych\n\n` +
+        `Istniejące dane zostaną zastąpione.`
+      );
+      if (!ok) {
+        e.target.value = "";
+        return;
+      }
+      // Clear existing data
+      const allRecipes = await dbGetAll("recipes");
+      for (const r of allRecipes) await dbDelete("recipes", r.id);
+      const allPlans = await dbGetAll("weekPlans");
+      for (const p of allPlans) await dbDelete("weekPlans", p.id);
+      const allIng = await dbGetAll("knownIngredients");
+      for (const i of allIng) await dbDelete("knownIngredients", i.name);
+
+      // Import
+      for (const recipe of (data.recipes || [])) {
+        await dbPut("recipes", recipe);
+      }
+      for (const plan of (data.weekPlans || [])) {
+        await dbPut("weekPlans", plan);
+      }
+      for (const ing of (data.knownIngredients || [])) {
+        await dbPut("knownIngredients", ing);
+      }
+
+      // Reload state
+      const newRecipes = await dbGetAll("recipes");
+      setRecipes(newRecipes);
+      await loadWeekPlan(weekMonday);
+      await refreshKnownIngredients();
+
+      setImportStatus({ type: "success", message: `Zaimportowano ${recipeCount} przepisów i ${planCount} planów!` });
+      setTimeout(() => setImportStatus(null), 4000);
+    } catch (err) {
+      setImportStatus({ type: "error", message: `Błąd importu: ${err.message}` });
+      setTimeout(() => setImportStatus(null), 4000);
+    }
+    e.target.value = "";
+    setSettingsOpen(false);
+  };
+
+  // === CLEAR ALL DATA ===
+  const clearAllData = async () => {
+    const ok = confirm("Czy na pewno chcesz usunąć WSZYSTKIE dane?\n\nTa operacja jest nieodwracalna.\nZalecamy najpierw wyeksportować backup.");
+    if (!ok) return;
+    const ok2 = confirm("Ostatnie ostrzeżenie — wszystkie przepisy i plany zostaną usunięte bezpowrotnie.");
+    if (!ok2) return;
+
+    const allRecipes = await dbGetAll("recipes");
+    for (const r of allRecipes) await dbDelete("recipes", r.id);
+    const allPlans = await dbGetAll("weekPlans");
+    for (const p of allPlans) await dbDelete("weekPlans", p.id);
+    const allIng = await dbGetAll("knownIngredients");
+    for (const i of allIng) await dbDelete("knownIngredients", i.name);
+
+    setRecipes([]);
+    await loadWeekPlan(weekMonday);
+    await refreshKnownIngredients();
+    setSettingsOpen(false);
+  };
 
   if (loading || !weekPlan) {
     return (
@@ -2094,8 +2207,91 @@ export default function App() {
           <button className={`nav-link ${page === "shopping" ? "active" : ""}`} onClick={() => setPage("shopping")}>
             <ShoppingCartIcon size={18} /> Zakupy
           </button>
+          <div style={{ width: 1, background: COLORS.borderLight, margin: "4px 8px" }} />
+          <button className="nav-link" onClick={() => setSettingsOpen(true)}>
+            <SettingsIcon size={18} />
+          </button>
         </div>
       </nav>
+
+      {/* Settings modal */}
+      <Modal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} title="⚙️ Ustawienia">
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Export */}
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <DownloadIcon size={22} color={COLORS.primary} />
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 700 }}>Eksportuj dane</h3>
+                <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 2 }}>Pobierz backup wszystkich przepisów i planów jako plik JSON</p>
+              </div>
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={exportData}>
+              <DownloadIcon size={16} /> Eksportuj do JSON
+            </button>
+          </div>
+
+          {/* Import */}
+          <div className="card" style={{ padding: 20 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <UploadIcon size={22} color={COLORS.accent} />
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 700 }}>Importuj dane</h3>
+                <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 2 }}>Wczytaj dane z pliku JSON — zastąpi istniejące dane</p>
+              </div>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".json"
+              onChange={importData}
+              style={{ display: "none" }}
+            />
+            <button className="btn btn-secondary" style={{ marginTop: 8 }} onClick={() => fileInputRef.current?.click()}>
+              <UploadIcon size={16} /> Importuj z JSON
+            </button>
+          </div>
+
+          {/* Clear */}
+          <div className="card" style={{ padding: 20, borderColor: "#f0c0c0" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+              <TrashIcon size={22} color="#c44" />
+              <div>
+                <h3 style={{ fontSize: 16, fontWeight: 700, color: "#c44" }}>Wyczyść dane</h3>
+                <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 2 }}>Usuń wszystkie przepisy, plany i dane — nieodwracalne!</p>
+              </div>
+            </div>
+            <button className="btn btn-danger" style={{ marginTop: 8 }} onClick={clearAllData}>
+              <TrashIcon size={16} /> Wyczyść wszystko
+            </button>
+          </div>
+
+          {/* Info */}
+          <div style={{ fontSize: 12, color: COLORS.textMuted, textAlign: "center", padding: "8px 0" }}>
+            Dane przechowywane lokalnie w przeglądarce (IndexedDB).
+            Eksportuj regularnie aby nie stracić danych.
+          </div>
+        </div>
+      </Modal>
+
+      {/* Import status toast */}
+      {importStatus && (
+        <div
+          style={{
+            position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+            padding: "14px 24px", borderRadius: 14,
+            background: importStatus.type === "success" ? "#2d7a3a" : "#c44",
+            color: "white", fontWeight: 600, fontSize: 14,
+            boxShadow: "0 8px 24px rgba(0,0,0,0.2)", zIndex: 1000,
+            display: "flex", alignItems: "center", gap: 10,
+            animation: "fadeIn 0.3s ease",
+          }}
+          className="pop-in"
+        >
+          {importStatus.type === "success" ? <CheckIcon size={18} /> : <XIcon size={18} />}
+          {importStatus.message}
+        </div>
+      )}
 
       {/* Main content */}
       <main style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px" }}>
