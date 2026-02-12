@@ -710,7 +710,100 @@ const RecipeForm = ({ recipe, onSave, onCancel, knownIngredients }) => {
 // RECIPE DETAIL VIEW
 // ============================================================
 const RecipeDetail = ({ recipe, onClose, onEdit, onToggleFavorite }) => {
+  const [shareStatus, setShareStatus] = useState(null);
+
   if (!recipe) return null;
+
+  const shareRecipeLink = () => {
+    // Encode recipe without image (too large for URL) as base64 in hash
+    const shareData = {
+      ...recipe,
+      imageUrl: "", // strip image — too large for URL
+      _shared: true,
+    };
+    const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(shareData))));
+    const url = `${window.location.origin}${window.location.pathname}#recipe=${encoded}`;
+    if (url.length > 8000) {
+      // Fallback: copy JSON to clipboard
+      navigator.clipboard.writeText(JSON.stringify(shareData, null, 2));
+      setShareStatus("json");
+    } else {
+      navigator.clipboard.writeText(url);
+      setShareStatus("link");
+    }
+    setTimeout(() => setShareStatus(null), 3000);
+  };
+
+  const exportRecipeJSON = () => {
+    const json = JSON.stringify(recipe, null, 2);
+    const blob = new Blob([json], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${recipe.name.replace(/[^a-zA-Z0-9ąćęłńóśźżĄĆĘŁŃÓŚŹŻ ]/g, "").replace(/\s+/g, "-")}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  const printRecipe = () => {
+    const ingredientsHtml = recipe.ingredients.map((ing) =>
+      `<div class="ing-row">
+        <span class="ing-name">${ing.name}</span>
+        <span class="ing-qty">${ing.quantity} ${ing.unit}</span>
+      </div>`
+    ).join("");
+
+    const stepsHtml = (recipe.steps || []).map((step, idx) =>
+      `<div class="step-row">
+        <div class="step-num">${idx + 1}</div>
+        <p>${step}</p>
+      </div>`
+    ).join("");
+
+    const tagsHtml = recipe.tags?.length
+      ? `<div class="tags">${recipe.tags.map((t) => `<span class="tag">${t}</span>`).join("")}</div>`
+      : "";
+
+    printContent(
+      `<div class="recipe-header">
+        <h1>${recipe.name}</h1>
+        <div class="meta">
+          <span>${getCategoryEmoji(recipe.category)} ${recipe.category}</span>
+          <span>⏱ ${recipe.prepTime} min</span>
+        </div>
+        ${tagsHtml}
+        ${recipe.description ? `<p class="desc">${recipe.description}</p>` : ""}
+      </div>
+      ${recipe.ingredients.length > 0 ? `
+        <h2>Składniki</h2>
+        <div class="ingredients">${ingredientsHtml}</div>
+      ` : ""}
+      ${(recipe.steps || []).length > 0 ? `
+        <h2>Przygotowanie</h2>
+        <div class="steps">${stepsHtml}</div>
+      ` : ""}
+      <style>
+        .recipe-header { margin-bottom: 24px; padding-bottom: 16px; border-bottom: 2px solid #E8DDD0; }
+        .meta { display: flex; gap: 16px; color: #8C7B6B; font-size: 14px; margin: 8px 0; }
+        .desc { color: #8C7B6B; font-size: 14px; line-height: 1.6; margin-top: 8px; }
+        .tags { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+        .tag { background: #FDF6EC; color: #8C7B6B; padding: 3px 10px; border-radius: 12px; font-size: 12px; }
+        .ingredients { margin-bottom: 24px; }
+        .ing-row { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #F0E8DC; font-size: 14px; }
+        .ing-row:last-child { border-bottom: none; }
+        .ing-name { font-weight: 600; }
+        .ing-qty { color: #D4703A; font-weight: 600; }
+        .steps { margin-bottom: 24px; }
+        .step-row { display: flex; gap: 14px; margin-bottom: 14px; align-items: flex-start; }
+        .step-num { width: 28px; height: 28px; border-radius: 50%; background: #D4783A; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex-shrink: 0; }
+        .step-row p { font-size: 14px; line-height: 1.6; padding-top: 3px; }
+      </style>`,
+      `${recipe.name} — Meal Planner`
+    );
+  };
+
   return (
     <div style={{ maxHeight: "65vh", overflowY: "auto" }} className="scrollbar-hidden">
       <div style={{ display: "flex", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
@@ -738,8 +831,15 @@ const RecipeDetail = ({ recipe, onClose, onEdit, onToggleFavorite }) => {
             {recipe.tags.map((t) => <span key={t} className="tag">{t}</span>)}
           </div>
           {recipe.description && <p style={{ color: COLORS.textMuted, lineHeight: 1.6 }}>{recipe.description}</p>}
-          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <button className="btn btn-secondary btn-sm" onClick={() => onEdit(recipe)}><EditIcon size={16} /> Edytuj</button>
+            <button className="btn btn-secondary btn-sm" onClick={printRecipe}><PrinterIcon size={16} /> Drukuj / PDF</button>
+            <button className="btn btn-secondary btn-sm" onClick={shareRecipeLink}>
+              {shareStatus === "link" ? <><CheckIcon size={16} /> Link skopiowany!</> :
+               shareStatus === "json" ? <><CheckIcon size={16} /> JSON skopiowany!</> :
+               <><LinkIcon size={16} /> Udostępnij</>}
+            </button>
+            <button className="btn btn-secondary btn-sm" onClick={exportRecipeJSON}><DownloadIcon size={16} /> JSON</button>
           </div>
         </div>
       </div>
@@ -2092,6 +2192,8 @@ export default function App() {
     await dbPut("weekPlans", plan);
   }, []);
 
+  const [sharedRecipeModal, setSharedRecipeModal] = useState(null);
+
   useEffect(() => {
     (async () => {
       await openDB(); // ensure DB is ready
@@ -2100,8 +2202,42 @@ export default function App() {
       await loadWeekPlan(weekMonday);
       await refreshKnownIngredients();
       setLoading(false);
+
+      // Check for shared recipe in URL hash
+      const hash = window.location.hash;
+      if (hash.startsWith("#recipe=")) {
+        try {
+          const encoded = hash.slice(8);
+          const json = decodeURIComponent(escape(atob(encoded)));
+          const recipe = JSON.parse(json);
+          if (recipe.name && recipe.ingredients) {
+            setSharedRecipeModal(recipe);
+            // Clean hash
+            window.history.replaceState(null, "", window.location.pathname);
+          }
+        } catch (e) {
+          console.error("Failed to parse shared recipe:", e);
+        }
+      }
     })();
   }, []);
+
+  const importSharedRecipe = async (recipe) => {
+    const newRecipe = { ...recipe, id: uid(), _shared: undefined, createdAt: new Date().toISOString() };
+    await dbPut("recipes", newRecipe);
+    setRecipes((prev) => [...prev, newRecipe]);
+    // Save ingredient names
+    for (const ing of newRecipe.ingredients) {
+      if (ing.name.trim()) {
+        await dbPut("knownIngredients", { name: ing.name.trim().toLowerCase() });
+      }
+    }
+    await refreshKnownIngredients();
+    setSharedRecipeModal(null);
+    setPage("recipes");
+    setImportStatus({ type: "success", message: `Zaimportowano przepis „${newRecipe.name}"!` });
+    setTimeout(() => setImportStatus(null), 4000);
+  };
 
   // === EXPORT ===
   const exportData = async () => {
@@ -2401,6 +2537,41 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Shared recipe import modal */}
+      <Modal isOpen={!!sharedRecipeModal} onClose={() => setSharedRecipeModal(null)} title="📩 Udostępniony przepis" wide>
+        {sharedRecipeModal && (
+          <div>
+            <div style={{ marginBottom: 20, padding: 16, background: COLORS.primaryPale, borderRadius: 14 }}>
+              <p style={{ fontSize: 13, color: COLORS.textMuted, marginBottom: 8 }}>Ktoś udostępnił Ci przepis:</p>
+              <h3 style={{ fontSize: 20, marginBottom: 8 }}>{sharedRecipeModal.name}</h3>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                <span className="tag tag-primary">{getCategoryEmoji(sharedRecipeModal.category)} {sharedRecipeModal.category}</span>
+                <span className="tag" style={{ background: "white", color: COLORS.primary }}>
+                  <ClockIcon size={14} />&nbsp;{sharedRecipeModal.prepTime} min
+                </span>
+              </div>
+              {sharedRecipeModal.description && <p style={{ fontSize: 13, color: COLORS.textMuted }}>{sharedRecipeModal.description}</p>}
+            </div>
+            {sharedRecipeModal.ingredients?.length > 0 && (
+              <div style={{ marginBottom: 16 }}>
+                <h4 style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Składniki ({sharedRecipeModal.ingredients.length}):</h4>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {sharedRecipeModal.ingredients.map((ing, i) => (
+                    <span key={i} className="tag">{ing.name} — {ing.quantity} {ing.unit}</span>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 12, marginTop: 20 }}>
+              <button className="btn btn-primary" onClick={() => importSharedRecipe(sharedRecipeModal)}>
+                <DownloadIcon size={16} /> Dodaj do moich przepisów
+              </button>
+              <button className="btn btn-ghost" onClick={() => setSharedRecipeModal(null)}>Anuluj</button>
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
