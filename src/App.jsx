@@ -349,6 +349,11 @@ const SettingsIcon = (p) => (
     <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>
   </svg>
 );
+const SmartphoneIcon = (p) => (
+  <svg width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
+  </svg>
+);
 const LinkIcon = (p) => <Icon {...p} d="M10 13a5 5 0 007.54.54l3-3a5 5 0 00-7.07-7.07l-1.72 1.71M14 11a5 5 0 00-7.54-.54l-3 3a5 5 0 007.07 7.07l1.71-1.71" />;
 const ExternalLinkIcon = (p) => <Icon {...p} d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3" />;
 const HistoryIcon = (p) => (
@@ -2036,6 +2041,37 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [importStatus, setImportStatus] = useState(null); // { type: "success"|"error", message }
   const fileInputRef = useRef(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [showInstallBanner, setShowInstallBanner] = useState(false);
+
+  // PWA install prompt
+  useEffect(() => {
+    const handler = (e) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      // Show banner if not dismissed before
+      if (!localStorage.getItem("pwa-install-dismissed")) {
+        setShowInstallBanner(true);
+      }
+    };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  }, []);
+
+  const installPWA = async () => {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    const { outcome } = await deferredPrompt.userChoice;
+    if (outcome === "accepted") {
+      setShowInstallBanner(false);
+    }
+    setDeferredPrompt(null);
+  };
+
+  const dismissInstallBanner = () => {
+    setShowInstallBanner(false);
+    localStorage.setItem("pwa-install-dismissed", "1");
+  };
 
   const refreshKnownIngredients = useCallback(async () => {
     const all = await dbGetAll("knownIngredients");
@@ -2271,8 +2307,51 @@ export default function App() {
             Dane przechowywane lokalnie w przeglądarce (IndexedDB).
             Eksportuj regularnie aby nie stracić danych.
           </div>
+
+          {/* Install PWA */}
+          {deferredPrompt && (
+            <div className="card" style={{ padding: 20, borderColor: COLORS.primary, background: COLORS.primaryPale }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+                <SmartphoneIcon size={22} color={COLORS.primary} />
+                <div>
+                  <h3 style={{ fontSize: 16, fontWeight: 700 }}>Zainstaluj aplikację</h3>
+                  <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 2 }}>Dodaj Meal Planner do ekranu głównego — działa offline!</p>
+                </div>
+              </div>
+              <button className="btn btn-primary" style={{ marginTop: 8 }} onClick={installPWA}>
+                <DownloadIcon size={16} /> Zainstaluj
+              </button>
+            </div>
+          )}
         </div>
       </Modal>
+
+      {/* PWA install banner */}
+      {showInstallBanner && (
+        <div
+          className="pop-in"
+          style={{
+            position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)",
+            background: "white", borderRadius: 16, padding: "16px 20px",
+            boxShadow: "0 8px 32px rgba(0,0,0,0.18)", zIndex: 999,
+            display: "flex", alignItems: "center", gap: 14,
+            maxWidth: 440, width: "calc(100% - 32px)",
+            border: `1px solid ${COLORS.borderLight}`,
+          }}
+        >
+          <div style={{ width: 44, height: 44, borderRadius: 12, background: COLORS.primaryPale, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <span style={{ fontSize: 24 }}>🍽️</span>
+          </div>
+          <div style={{ flex: 1 }}>
+            <p style={{ fontWeight: 700, fontSize: 14, marginBottom: 2 }}>Zainstaluj Meal Planner</p>
+            <p style={{ fontSize: 12, color: COLORS.textMuted }}>Szybki dostęp i praca offline</p>
+          </div>
+          <button className="btn btn-sm btn-primary" onClick={installPWA}>Instaluj</button>
+          <button className="btn btn-ghost btn-sm" onClick={dismissInstallBanner} style={{ padding: 4 }}>
+            <XIcon size={16} />
+          </button>
+        </div>
+      )}
 
       {/* Import status toast */}
       {importStatus && (
