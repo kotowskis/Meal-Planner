@@ -328,12 +328,77 @@ const GlobalStyles = () => (
     .scrollbar-hidden::-webkit-scrollbar { display: none; }
     .scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
 
+    /* === RESPONSIVE === */
     @media (max-width: 768px) {
-      .week-grid { grid-template-columns: 1fr !important; }
+      /* Week grid — single column list */
+      .week-grid { grid-template-columns: 1fr !important; gap: 8px !important; }
+      .week-grid .card { min-height: auto !important; }
+      .week-grid .card > div:first-child { padding: 8px 12px !important; }
+      .week-grid .card > div:last-child { padding: 8px !important; }
+      .week-grid .meal-card-mini { display: flex !important; flex-direction: row !important; align-items: center !important; border-radius: 12px !important; }
+      .week-grid .meal-card-mini > div:first-child { width: 64px !important; height: 64px !important; min-height: unset !important; flex-shrink: 0; border-radius: 12px 0 0 12px !important; overflow: hidden !important; }
+      .week-grid .meal-card-mini > div:first-child img { height: 100% !important; }
+      .week-grid .meal-card-mini > div:nth-child(2) { padding: 8px 10px !important; flex: 1; min-width: 0; }
+      .week-grid .meal-card-mini > button { top: 50% !important; transform: translateY(-50%) !important; }
+      .week-grid .empty-slot { min-height: 56px !important; padding: 10px !important; flex-direction: row !important; gap: 8px !important; }
+
+      /* Recipe grid */
       .recipe-grid { grid-template-columns: 1fr !important; }
+      
+      /* Navbar — bottom bar on mobile */
+      .app-nav {
+        position: fixed !important; bottom: 0 !important; top: auto !important; left: 0; right: 0;
+        padding: 6px 8px !important; justify-content: center !important;
+        border-bottom: none !important; border-top: 1px solid ${COLORS.borderLight} !important;
+        z-index: 50 !important;
+      }
+      .app-nav .nav-logo { display: none !important; }
+      .app-nav .nav-links { gap: 2px !important; flex: 1; justify-content: space-around; }
+      .app-nav .nav-link { padding: 8px 12px !important; font-size: 11px !important; flex-direction: column !important; gap: 2px !important; border-radius: 10px !important; }
+      .app-nav .nav-link .nav-label-full { display: none !important; }
+      .app-nav .nav-link .nav-label-short { display: block !important; }
+      .app-nav .nav-divider { display: none !important; }
+
+      /* Main content padding for bottom nav */
+      .app-main { padding: 16px 12px 80px 12px !important; }
+      
+      /* Planner header mobile */
+      .planner-header { flex-direction: column !important; align-items: stretch !important; gap: 10px !important; }
+      .planner-header h1 { font-size: 20px !important; }
+      .planner-title-row { flex-wrap: wrap !important; gap: 8px !important; }
+      .planner-actions { flex-wrap: wrap !important; justify-content: center !important; gap: 6px !important; }
+      .planner-actions .btn-label { display: none !important; }
+      .planner-actions > span { font-size: 13px !important; min-width: 120px !important; }
+      
+      /* Month view mobile */
+      .month-grid { gap: 2px !important; }
+      .month-cell { min-height: 65px !important; padding: 3px !important; border-radius: 8px !important; }
+      .month-cell-name { font-size: 9px !important; }
+
+      /* Modal on mobile — slide up from bottom */
+      .modal-overlay { padding: 0 !important; align-items: flex-end !important; }
+      .modal-content { border-radius: 20px 20px 0 0 !important; max-height: 92vh !important; }
+
+      /* Touch-friendly buttons */
+      .btn { min-height: 40px; }
+      .btn-sm { min-height: 36px; }
+
+      /* Recipe detail mobile */
+      .recipe-detail-top { flex-direction: column !important; }
+      .recipe-detail-top > div:first-child { width: 100% !important; height: 180px !important; }
+      .recipe-detail-actions { gap: 6px !important; }
+      .recipe-detail-actions .btn { font-size: 12px !important; padding: 6px 10px !important; }
+
+      /* Shopping list mobile */
+      .shopping-item-row { padding: 12px 14px !important; }
     }
+
     @media (min-width: 769px) and (max-width: 1100px) {
       .week-grid { grid-template-columns: repeat(4, 1fr) !important; }
+    }
+
+    @media (min-width: 769px) {
+      .nav-label-short { display: none !important; }
     }
   `}</style>
 );
@@ -820,7 +885,7 @@ const RecipeDetail = ({ recipe, onClose, onEdit, onToggleFavorite }) => {
 
   return (
     <div style={{ maxHeight: "65vh", overflowY: "auto" }} className="scrollbar-hidden">
-      <div style={{ display: "flex", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
+      <div className="recipe-detail-top" style={{ display: "flex", gap: 20, marginBottom: 20, flexWrap: "wrap" }}>
         {recipe.imageUrl ? (
           <div style={{ width: 200, height: 200, borderRadius: 16, overflow: "hidden", flexShrink: 0 }}>
             <img src={recipe.imageUrl} alt={recipe.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
@@ -845,7 +910,7 @@ const RecipeDetail = ({ recipe, onClose, onEdit, onToggleFavorite }) => {
             {recipe.tags.map((t) => <span key={t} className="tag">{t}</span>)}
           </div>
           {recipe.description && <p style={{ color: COLORS.textMuted, lineHeight: 1.6 }}>{recipe.description}</p>}
-          <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <div className="recipe-detail-actions" style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
             <button className="btn btn-secondary btn-sm" onClick={() => onEdit(recipe)}><EditIcon size={16} /> Edytuj</button>
             <button className="btn btn-secondary btn-sm" onClick={printRecipe}><PrinterIcon size={16} /> Drukuj / PDF</button>
             <button className="btn btn-secondary btn-sm" onClick={shareRecipeLink}>
@@ -1487,8 +1552,8 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
   return (
     <div className="fade-in">
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+      <div className="planner-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
+        <div className="planner-title-row" style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <h1 style={{ fontSize: 28 }}>📅 {viewMode === "week" ? "Plan tygodnia" : "Plan miesiąca"}</h1>
           {/* View toggle */}
           <div style={{ display: "flex", background: COLORS.borderLight, borderRadius: 10, padding: 3 }}>
@@ -1508,27 +1573,27 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
             </button>
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+        <div className="planner-actions" style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
           {viewMode === "week" ? (
             <>
               <button className="btn btn-ghost" onClick={() => navigateWeek(-1)}><ChevronLeft /></button>
-              <span style={{ fontWeight: 600, fontSize: 15, minWidth: 180, textAlign: "center" }}>{weekLabel}</span>
+              <span style={{ fontWeight: 600, fontSize: 15, minWidth: 140, textAlign: "center" }}>{weekLabel}</span>
               <button className="btn btn-ghost" onClick={() => navigateWeek(1)}><ChevronRight /></button>
               <button className="btn btn-sm btn-secondary" onClick={goToday}>Dziś</button>
-              <button className="btn btn-sm btn-secondary" onClick={copyLastWeek}>
-                <CopyIcon size={16} /> Kopiuj z zeszłego tygodnia
+              <button className="btn btn-sm btn-secondary" onClick={copyLastWeek} title="Kopiuj z zeszłego tygodnia">
+                <CopyIcon size={16} /> <span className="btn-label">Kopiuj tydzień</span>
               </button>
-              <button className="btn btn-sm btn-secondary" onClick={printPlan}>
-                <PrinterIcon size={16} /> Drukuj
+              <button className="btn btn-sm btn-secondary" onClick={printPlan} title="Drukuj">
+                <PrinterIcon size={16} /> <span className="btn-label">Drukuj</span>
               </button>
-              <button className="btn btn-sm btn-secondary" onClick={openHistory}>
-                <HistoryIcon size={16} /> Historia
+              <button className="btn btn-sm btn-secondary" onClick={openHistory} title="Historia">
+                <HistoryIcon size={16} /> <span className="btn-label">Historia</span>
               </button>
             </>
           ) : (
             <>
               <button className="btn btn-ghost" onClick={() => navigateMonth(-1)}><ChevronLeft /></button>
-              <span style={{ fontWeight: 600, fontSize: 15, minWidth: 180, textAlign: "center" }}>{monthLabel}</span>
+              <span style={{ fontWeight: 600, fontSize: 15, minWidth: 140, textAlign: "center" }}>{monthLabel}</span>
               <button className="btn btn-ghost" onClick={() => navigateMonth(1)}><ChevronRight /></button>
               <button className="btn btn-sm btn-secondary" onClick={() => setMonthDate(new Date())}>Dziś</button>
             </>
@@ -1614,7 +1679,7 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
         /* ===== MONTH VIEW ===== */
         <div>
           {/* Day headers */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
+          <div className="month-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 4 }}>
             {DAYS_SHORT.map((d) => (
               <div key={d} style={{ textAlign: "center", fontWeight: 700, fontSize: 12, color: COLORS.textMuted, padding: "8px 0", textTransform: "uppercase", letterSpacing: 0.5 }}>
                 {d}
@@ -1622,7 +1687,7 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
             ))}
           </div>
           {/* Calendar grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+          <div className="month-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
             {monthDays.map(({ date, inMonth }, i) => {
               const dateStr = formatDate(date);
               const recipeId = monthPlans[dateStr];
@@ -1633,6 +1698,7 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
               return (
                 <div
                   key={i}
+                  className="month-cell"
                   style={{
                     minHeight: 90,
                     padding: 6,
@@ -1679,7 +1745,7 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
                       ) : (
                         <span style={{ fontSize: 16 }}>{getCategoryEmoji(recipe.category)}</span>
                       )}
-                      <span style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      <span className="month-cell-name" style={{ fontSize: 11, fontWeight: 500, lineHeight: 1.2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {recipe.name}
                       </span>
                     </div>
@@ -2602,28 +2668,35 @@ export default function App() {
       <GlobalStyles />
 
       {/* Navbar */}
-      <nav style={{
+      <nav className="app-nav" style={{
         position: "sticky", top: 0, zIndex: 50, background: "rgba(253,246,236,0.92)",
         backdropFilter: "blur(12px)", borderBottom: `1px solid ${COLORS.borderLight}`,
         padding: "12px 24px", display: "flex", justifyContent: "space-between", alignItems: "center"
       }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <div className="nav-logo" style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <span style={{ fontSize: 28 }}>🍽️</span>
           <span style={{ fontFamily: "'DM Serif Display', serif", fontSize: 22, color: COLORS.text }}>Meal Planner</span>
         </div>
-        <div style={{ display: "flex", gap: 4 }}>
+        <div className="nav-links" style={{ display: "flex", gap: 4 }}>
           <button className={`nav-link ${page === "planner" ? "active" : ""}`} onClick={() => setPage("planner")}>
-            <CalendarIcon size={18} /> Planer
+            <CalendarIcon size={18} />
+            <span className="nav-label-full">Planer</span>
+            <span className="nav-label-short">Planer</span>
           </button>
           <button className={`nav-link ${page === "recipes" ? "active" : ""}`} onClick={() => setPage("recipes")}>
-            <BookIcon size={18} /> Przepisy
+            <BookIcon size={18} />
+            <span className="nav-label-full">Przepisy</span>
+            <span className="nav-label-short">Przepisy</span>
           </button>
           <button className={`nav-link ${page === "shopping" ? "active" : ""}`} onClick={() => setPage("shopping")}>
-            <ShoppingCartIcon size={18} /> Zakupy
+            <ShoppingCartIcon size={18} />
+            <span className="nav-label-full">Zakupy</span>
+            <span className="nav-label-short">Zakupy</span>
           </button>
-          <div style={{ width: 1, background: COLORS.borderLight, margin: "4px 8px" }} />
+          <div className="nav-divider" style={{ width: 1, background: COLORS.borderLight, margin: "4px 8px" }} />
           <button className="nav-link" onClick={() => setSettingsOpen(true)}>
             <SettingsIcon size={18} />
+            <span className="nav-label-short" style={{ fontSize: 10 }}>⚙️</span>
           </button>
         </div>
       </nav>
@@ -2758,7 +2831,7 @@ export default function App() {
       )}
 
       {/* Main content */}
-      <main style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px" }}>
+      <main className="app-main" style={{ maxWidth: 1200, margin: "0 auto", padding: "28px 24px" }}>
         {page === "planner" && (
           <PlannerPage
             recipes={recipes}
