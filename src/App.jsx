@@ -445,6 +445,16 @@ const GridIcon = (p) => (
     <rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/>
   </svg>
 );
+const BarChartIcon = (p) => (
+  <svg width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>
+  </svg>
+);
+const TrophyIcon = (p) => (
+  <svg width={p.size||20} height={p.size||20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+    <path d="M6 9H4.5a2.5 2.5 0 010-5H6M18 9h1.5a2.5 2.5 0 000-5H18M4 22h16M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20 7 22h10c0-2-0.85-3.25-2.03-3.79A1.07 1.07 0 0114 17v-2.34"/><path d="M18 2H6v7a6 6 0 0012 0V2z"/>
+  </svg>
+);
 
 const HeartIcon = ({ filled, size = 20, color }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={filled ? color || COLORS.heart : "none"} stroke={color || COLORS.heart} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -2299,6 +2309,254 @@ const ShoppingListPage = ({ recipes, weekPlan, weekMonday }) => {
 };
 
 // ============================================================
+// STATS PAGE
+// ============================================================
+const StatsPage = ({ recipes, weekPlans: weekPlansPromise }) => {
+  const [allPlans, setAllPlans] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      const plans = await dbGetAll("weekPlans");
+      setAllPlans(plans);
+      setLoading(false);
+    })();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="fade-in" style={{ textAlign: "center", padding: 60, color: COLORS.textMuted }}>
+        <p>Ładowanie statystyk...</p>
+      </div>
+    );
+  }
+
+  // Compute stats
+  const allAssignments = [];
+  for (const plan of allPlans) {
+    for (const day of (plan.days || [])) {
+      if (day.recipeId) {
+        allAssignments.push({ recipeId: day.recipeId, date: day.date });
+      }
+    }
+  }
+
+  // Most cooked recipes
+  const recipeCount = {};
+  for (const a of allAssignments) {
+    recipeCount[a.recipeId] = (recipeCount[a.recipeId] || 0) + 1;
+  }
+  const topRecipes = Object.entries(recipeCount)
+    .map(([id, count]) => ({ recipe: recipes.find((r) => r.id === id), count }))
+    .filter((x) => x.recipe)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  const maxRecipeCount = topRecipes[0]?.count || 1;
+
+  // Most used ingredients
+  const ingredientCount = {};
+  for (const a of allAssignments) {
+    const recipe = recipes.find((r) => r.id === a.recipeId);
+    if (!recipe) continue;
+    for (const ing of recipe.ingredients) {
+      const name = ing.name.trim().toLowerCase();
+      if (name) ingredientCount[name] = (ingredientCount[name] || 0) + 1;
+    }
+  }
+  const topIngredients = Object.entries(ingredientCount)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 15);
+  const maxIngCount = topIngredients[0]?.[1] || 1;
+
+  // Average prep time
+  const usedRecipeIds = [...new Set(allAssignments.map((a) => a.recipeId))];
+  const usedRecipes = usedRecipeIds.map((id) => recipes.find((r) => r.id === id)).filter(Boolean);
+  const avgPrepTime = usedRecipes.length > 0
+    ? Math.round(usedRecipes.reduce((sum, r) => sum + (r.prepTime || 0), 0) / usedRecipes.length)
+    : 0;
+
+  // Days planned per month
+  const monthStats = {};
+  for (const a of allAssignments) {
+    const month = a.date?.slice(0, 7); // "YYYY-MM"
+    if (month) monthStats[month] = (monthStats[month] || 0) + 1;
+  }
+  const monthEntries = Object.entries(monthStats).sort((a, b) => a[0].localeCompare(b[0])).slice(-12);
+  const maxMonthDays = Math.max(...monthEntries.map((e) => e[1]), 1);
+
+  // Category distribution
+  const catCount = {};
+  for (const a of allAssignments) {
+    const recipe = recipes.find((r) => r.id === a.recipeId);
+    if (recipe) catCount[recipe.category] = (catCount[recipe.category] || 0) + 1;
+  }
+  const catEntries = Object.entries(catCount).sort((a, b) => b[1] - a[1]);
+  const totalCatCount = catEntries.reduce((s, e) => s + e[1], 0) || 1;
+
+  // General stats
+  const totalPlannedDays = allAssignments.length;
+  const totalWeeks = allPlans.length;
+  const uniqueRecipesUsed = usedRecipeIds.length;
+
+  const formatMonthLabel = (ym) => {
+    const [y, m] = ym.split("-");
+    return `${MONTHS_PL[parseInt(m, 10) - 1]?.slice(0, 3) || m} ${y}`;
+  };
+
+  const BAR_COLORS = [COLORS.primary, COLORS.accent, "#E8A838", "#7B68EE", "#E25555", "#4ECDC4", "#FF6B6B", "#45B7D1", "#96CEB4", "#FFEAA7"];
+
+  return (
+    <div className="fade-in">
+      <h1 style={{ fontSize: 28, marginBottom: 24 }}>📊 Statystyki</h1>
+
+      {totalPlannedDays === 0 ? (
+        <div style={{ textAlign: "center", padding: 60, color: COLORS.textMuted }}>
+          <p style={{ fontSize: 64, marginBottom: 16 }}>📊</p>
+          <h3 style={{ marginBottom: 8 }}>Brak danych</h3>
+          <p>Zaplanuj obiady w planerze, a statystyki pojawią się tutaj.</p>
+        </div>
+      ) : (
+        <>
+          {/* Summary cards */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, marginBottom: 28 }}>
+            {[
+              { icon: "📅", label: "Zaplanowanych dni", value: totalPlannedDays },
+              { icon: "📖", label: "Użytych przepisów", value: uniqueRecipesUsed },
+              { icon: "📋", label: "Zapisanych tygodni", value: totalWeeks },
+              { icon: "⏱️", label: "Średni czas gotowania", value: `${avgPrepTime} min` },
+            ].map((stat, i) => (
+              <div key={i} className="card" style={{ padding: 20, textAlign: "center" }}>
+                <p style={{ fontSize: 32, marginBottom: 6 }}>{stat.icon}</p>
+                <p style={{ fontSize: 28, fontWeight: 700, color: COLORS.primary, fontFamily: "'DM Serif Display', serif" }}>{stat.value}</p>
+                <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 4 }}>{stat.label}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Top recipes */}
+          <div className="card" style={{ padding: 24, marginBottom: 20 }}>
+            <h3 style={{ fontSize: 18, marginBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
+              <TrophyIcon size={20} color={COLORS.primary} /> Najczęściej gotowane dania
+            </h3>
+            {topRecipes.length === 0 ? (
+              <p style={{ color: COLORS.textMuted }}>Brak danych</p>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {topRecipes.map(({ recipe, count }, i) => (
+                  <div key={recipe.id} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                    <span style={{ width: 28, fontWeight: 700, color: i < 3 ? COLORS.primary : COLORS.textMuted, fontSize: i < 3 ? 18 : 14 }}>
+                      {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : `${i + 1}.`}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+                        <span style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {getCategoryEmoji(recipe.category)} {recipe.name}
+                        </span>
+                        <span style={{ fontWeight: 700, color: COLORS.primary, fontSize: 14, flexShrink: 0, marginLeft: 8 }}>
+                          {count}×
+                        </span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 3, background: COLORS.borderLight, overflow: "hidden" }}>
+                        <div style={{ height: "100%", borderRadius: 3, background: BAR_COLORS[i % BAR_COLORS.length], width: `${(count / maxRecipeCount) * 100}%`, transition: "width 0.5s ease" }} />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 20, marginBottom: 20 }}>
+            {/* Top ingredients */}
+            <div className="card" style={{ padding: 24 }}>
+              <h3 style={{ fontSize: 18, marginBottom: 16 }}>🥕 Najpopularniejsze składniki</h3>
+              {topIngredients.length === 0 ? (
+                <p style={{ color: COLORS.textMuted }}>Brak danych</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {topIngredients.map(([name, count], i) => (
+                    <div key={name} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ width: 24, fontSize: 12, color: COLORS.textMuted, fontWeight: 600, textAlign: "right" }}>{i + 1}.</span>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                          <span style={{ fontSize: 13, fontWeight: 500 }}>{name}</span>
+                          <span style={{ fontSize: 12, color: COLORS.primary, fontWeight: 600 }}>{count}×</span>
+                        </div>
+                        <div style={{ height: 4, borderRadius: 2, background: COLORS.borderLight }}>
+                          <div style={{ height: "100%", borderRadius: 2, background: COLORS.accent, width: `${(count / maxIngCount) * 100}%`, transition: "width 0.5s ease" }} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Category distribution */}
+            <div className="card" style={{ padding: 24 }}>
+              <h3 style={{ fontSize: 18, marginBottom: 16 }}>🏷️ Kategorie dań</h3>
+              {catEntries.length === 0 ? (
+                <p style={{ color: COLORS.textMuted }}>Brak danych</p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {catEntries.map(([cat, count], i) => {
+                    const pct = Math.round((count / totalCatCount) * 100);
+                    return (
+                      <div key={cat} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                        <span style={{ fontSize: 20 }}>{getCategoryEmoji(cat)}</span>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 3 }}>
+                            <span style={{ fontSize: 13, fontWeight: 500 }}>{cat}</span>
+                            <span style={{ fontSize: 12, color: COLORS.textMuted }}>{pct}% ({count})</span>
+                          </div>
+                          <div style={{ height: 8, borderRadius: 4, background: COLORS.borderLight }}>
+                            <div style={{ height: "100%", borderRadius: 4, background: BAR_COLORS[i % BAR_COLORS.length], width: `${pct}%`, transition: "width 0.5s ease" }} />
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Monthly planning chart */}
+          {monthEntries.length > 0 && (
+            <div className="card" style={{ padding: 24 }}>
+              <h3 style={{ fontSize: 18, marginBottom: 16 }}>📅 Zaplanowane dni w miesiącu</h3>
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 6, height: 180, paddingBottom: 30, position: "relative" }}>
+                {monthEntries.map(([month, count], i) => (
+                  <div key={month} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: COLORS.primary, marginBottom: 4 }}>{count}</span>
+                    <div style={{
+                      width: "100%", maxWidth: 48, borderRadius: "6px 6px 0 0",
+                      background: `linear-gradient(to top, ${COLORS.primary}, ${COLORS.primaryLight})`,
+                      height: `${(count / maxMonthDays) * 130}px`,
+                      transition: "height 0.5s ease",
+                      minHeight: 4,
+                    }} />
+                    <span style={{
+                      fontSize: 10, color: COLORS.textMuted, marginTop: 6, fontWeight: 500,
+                      position: "absolute", bottom: 0, writingMode: "horizontal-tb",
+                      transform: "rotate(-45deg)", transformOrigin: "center center",
+                      whiteSpace: "nowrap",
+                    }}>
+                      {formatMonthLabel(month)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+};
+
+// ============================================================
 // CATEGORY MANAGER
 // ============================================================
 const EMOJI_SUGGESTIONS = ["🍕", "🌮", "🍜", "🥟", "🍛", "🥙", "🍱", "🥞", "🧆", "🥪", "🌯", "🍔", "🥐", "🍰", "🥧", "🫔", "🥣", "🍿", "🧇", "🥗"];
@@ -2693,6 +2951,11 @@ export default function App() {
             <span className="nav-label-full">Zakupy</span>
             <span className="nav-label-short">Zakupy</span>
           </button>
+          <button className={`nav-link ${page === "stats" ? "active" : ""}`} onClick={() => setPage("stats")}>
+            <BarChartIcon size={18} />
+            <span className="nav-label-full">Statystyki</span>
+            <span className="nav-label-short">Stats</span>
+          </button>
           <div className="nav-divider" style={{ width: 1, background: COLORS.borderLight, margin: "4px 8px" }} />
           <button className="nav-link" onClick={() => setSettingsOpen(true)}>
             <SettingsIcon size={18} />
@@ -2857,6 +3120,9 @@ export default function App() {
             weekPlan={weekPlan}
             weekMonday={weekMonday}
           />
+        )}
+        {page === "stats" && (
+          <StatsPage recipes={recipes} />
         )}
       </main>
 
