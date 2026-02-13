@@ -1304,6 +1304,73 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
     saveWeekPlan(newPlan);
   };
 
+  // Drag & drop
+  const [dragData, setDragData] = useState(null); // { recipeId, sourceType: "week"|"month", sourceIdx?, sourceDate? }
+  const [dropTarget, setDropTarget] = useState(null); // { type: "week"|"month", idx?, date? }
+
+  const handleWeekDragStart = (e, idx, recipeId) => {
+    setDragData({ recipeId, sourceType: "week", sourceIdx: idx });
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", recipeId);
+  };
+
+  const handleMonthDragStart = (e, dateStr, recipeId) => {
+    setDragData({ recipeId, sourceType: "month", sourceDate: dateStr });
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", recipeId);
+  };
+
+  const handleWeekDrop = (e, targetIdx) => {
+    e.preventDefault();
+    setDropTarget(null);
+    if (!dragData) return;
+
+    if (dragData.sourceType === "week") {
+      // Swap within week
+      const newPlan = { ...weekPlan, days: [...weekPlan.days] };
+      const targetRecipeId = newPlan.days[targetIdx].recipeId;
+      newPlan.days[targetIdx] = { ...newPlan.days[targetIdx], recipeId: dragData.recipeId };
+      newPlan.days[dragData.sourceIdx] = { ...newPlan.days[dragData.sourceIdx], recipeId: targetRecipeId };
+      setWeekPlan(newPlan);
+      saveWeekPlan(newPlan);
+    } else if (dragData.sourceType === "month") {
+      // From month to week — assign to target day and clear source
+      const newPlan = { ...weekPlan, days: [...weekPlan.days] };
+      newPlan.days[targetIdx] = { ...newPlan.days[targetIdx], recipeId: dragData.recipeId };
+      setWeekPlan(newPlan);
+      saveWeekPlan(newPlan);
+      removeRecipeFromDate(dragData.sourceDate);
+    }
+    setDragData(null);
+  };
+
+  const handleMonthDrop = async (e, targetDateStr) => {
+    e.preventDefault();
+    setDropTarget(null);
+    if (!dragData) return;
+
+    if (dragData.sourceType === "month" && dragData.sourceDate !== targetDateStr) {
+      // Swap within month
+      const targetRecipeId = monthPlans[targetDateStr] || null;
+      await assignRecipeToDate(dragData.recipeId, targetDateStr);
+      if (targetRecipeId) {
+        await assignRecipeToDate(targetRecipeId, dragData.sourceDate);
+      } else {
+        await removeRecipeFromDate(dragData.sourceDate);
+      }
+    } else if (dragData.sourceType === "week") {
+      // From week to month
+      await assignRecipeToDate(dragData.recipeId, targetDateStr);
+      clearDay(dragData.sourceIdx);
+    }
+    setDragData(null);
+  };
+
+  const handleDragOver = (e) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
   // Month view: assign recipe to a specific date
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
   const [monthPickerDate, setMonthPickerDate] = useState(null);
@@ -1461,11 +1528,20 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
           {weekPlan.days.map((day, idx) => {
             const recipe = day.recipeId ? getRecipeById(day.recipeId) : null;
             const isToday = day.date === today;
+            const isDragOver = dropTarget?.type === "week" && dropTarget?.idx === idx;
             return (
               <div
                 key={day.date}
                 className={`card ${isToday ? "today-highlight" : ""}`}
-                style={{ padding: 0, overflow: "hidden", minHeight: 200 }}
+                style={{
+                  padding: 0, overflow: "hidden", minHeight: 200,
+                  outline: isDragOver ? `2px dashed ${COLORS.primary}` : "none",
+                  background: isDragOver ? COLORS.primaryPale : undefined,
+                  transition: "outline 0.15s, background 0.15s",
+                }}
+                onDragOver={(e) => { handleDragOver(e); setDropTarget({ type: "week", idx }); }}
+                onDragLeave={() => setDropTarget(null)}
+                onDrop={(e) => handleWeekDrop(e, idx)}
               >
                 <div style={{
                   padding: "10px 14px",
@@ -1478,10 +1554,17 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
                 </div>
                 <div style={{ padding: 12 }}>
                   {recipe ? (
-                    <div className="meal-card-mini" onClick={() => setDetailRecipe(recipe)}>
+                    <div
+                      className="meal-card-mini"
+                      draggable
+                      onDragStart={(e) => handleWeekDragStart(e, idx, day.recipeId)}
+                      onDragEnd={() => { setDragData(null); setDropTarget(null); }}
+                      onClick={() => setDetailRecipe(recipe)}
+                      style={{ cursor: "grab" }}
+                    >
                       {recipe.imageUrl ? (
                         <div style={{ height: 80, overflow: "hidden" }}>
-                          <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} draggable={false} />
                         </div>
                       ) : (
                         <div style={{ height: 80, background: COLORS.primaryPale, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36 }}>
@@ -1532,6 +1615,7 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
               const recipe = recipeId ? recipes.find((r) => r.id === recipeId) : null;
               const isToday = dateStr === today;
               const dayNum = date.getDate();
+              const isDragOver = dropTarget?.type === "month" && dropTarget?.date === dateStr;
               return (
                 <div
                   key={i}
@@ -1539,15 +1623,18 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
                     minHeight: 90,
                     padding: 6,
                     borderRadius: 12,
-                    background: isToday ? COLORS.primaryPale : inMonth ? COLORS.card : COLORS.bg,
-                    border: isToday ? `2px solid ${COLORS.primary}` : `1px solid ${inMonth ? COLORS.borderLight : "transparent"}`,
+                    background: isDragOver ? COLORS.primaryPale : isToday ? COLORS.primaryPale : inMonth ? COLORS.card : COLORS.bg,
+                    border: isDragOver ? `2px dashed ${COLORS.primary}` : isToday ? `2px solid ${COLORS.primary}` : `1px solid ${inMonth ? COLORS.borderLight : "transparent"}`,
                     opacity: inMonth ? 1 : 0.35,
                     transition: "all 0.15s",
                     overflow: "hidden",
                     position: "relative",
                   }}
-                  onMouseEnter={(e) => { if (inMonth) e.currentTarget.style.boxShadow = COLORS.shadow; }}
+                  onMouseEnter={(e) => { if (inMonth && !dragData) e.currentTarget.style.boxShadow = COLORS.shadow; }}
                   onMouseLeave={(e) => { e.currentTarget.style.boxShadow = "none"; }}
+                  onDragOver={(e) => { if (inMonth) { handleDragOver(e); setDropTarget({ type: "month", date: dateStr }); } }}
+                  onDragLeave={() => setDropTarget(null)}
+                  onDrop={(e) => { if (inMonth) handleMonthDrop(e, dateStr); }}
                 >
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
                     <span style={{ fontSize: 12, fontWeight: isToday ? 800 : 600, color: isToday ? COLORS.primary : COLORS.textMuted }}>
@@ -1565,12 +1652,15 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
                   </div>
                   {recipe ? (
                     <div
-                      style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}
+                      draggable
+                      onDragStart={(e) => handleMonthDragStart(e, dateStr, recipeId)}
+                      onDragEnd={() => { setDragData(null); setDropTarget(null); }}
+                      style={{ display: "flex", alignItems: "center", gap: 4, cursor: "grab" }}
                       onClick={() => setDetailRecipe(recipe)}
                     >
                       {recipe.imageUrl ? (
                         <div style={{ width: 28, height: 28, borderRadius: 6, overflow: "hidden", flexShrink: 0 }}>
-                          <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                          <img src={recipe.imageUrl} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} draggable={false} />
                         </div>
                       ) : (
                         <span style={{ fontSize: 16 }}>{getCategoryEmoji(recipe.category)}</span>
@@ -1588,7 +1678,7 @@ const PlannerPage = ({ recipes, weekPlan, setWeekPlan, weekMonday, setWeekMonday
                         cursor: "pointer", color: COLORS.textMuted, fontSize: 11, gap: 4,
                         transition: "all 0.15s",
                       }}
-                      onMouseEnter={(e) => { e.currentTarget.style.borderColor = COLORS.primary; e.currentTarget.style.color = COLORS.primary; }}
+                      onMouseEnter={(e) => { if (!dragData) { e.currentTarget.style.borderColor = COLORS.primary; e.currentTarget.style.color = COLORS.primary; } }}
                       onMouseLeave={(e) => { e.currentTarget.style.borderColor = COLORS.border; e.currentTarget.style.color = COLORS.textMuted; }}
                     >
                       <PlusIcon size={12} /> Dodaj
