@@ -94,7 +94,7 @@ const uid = () => crypto.randomUUID ? crypto.randomUUID() : Math.random().toStri
 const DAYS_PL = ["poniedziałek", "wtorek", "środa", "czwartek", "piątek", "sobota", "niedziela"];
 const DAYS_SHORT = ["Pon", "Wt", "Śr", "Czw", "Pt", "Sob", "Nd"];
 
-const CATEGORIES = [
+const DEFAULT_CATEGORIES = [
   { value: "zupa", label: "🍲 Zupa", emoji: "🍲" },
   { value: "makaron", label: "🍝 Makaron", emoji: "🍝" },
   { value: "mięso", label: "🥩 Mięso", emoji: "🥩" },
@@ -105,6 +105,20 @@ const CATEGORIES = [
   { value: "wegetariańskie", label: "🥦 Wegetariańskie", emoji: "🥦" },
   { value: "inne", label: "🍽️ Inne", emoji: "🍽️" },
 ];
+
+function loadCustomCategories() {
+  try {
+    const data = localStorage.getItem("meal-planner-custom-categories");
+    return data ? JSON.parse(data) : [];
+  } catch { return []; }
+}
+
+function saveCustomCategories(cats) {
+  localStorage.setItem("meal-planner-custom-categories", JSON.stringify(cats));
+}
+
+// Will be overridden by App state — this is the initial value
+let CATEGORIES = [...DEFAULT_CATEGORIES, ...loadCustomCategories()];
 
 const UNITS = ["g", "kg", "ml", "l", "szt.", "łyżka", "łyżeczka", "szklanka", "opakowanie"];
 
@@ -2219,6 +2233,114 @@ const ShoppingListPage = ({ recipes, weekPlan, weekMonday }) => {
 };
 
 // ============================================================
+// CATEGORY MANAGER
+// ============================================================
+const EMOJI_SUGGESTIONS = ["🍕", "🌮", "🍜", "🥟", "🍛", "🥙", "🍱", "🥞", "🧆", "🥪", "🌯", "🍔", "🥐", "🍰", "🥧", "🫔", "🥣", "🍿", "🧇", "🥗"];
+
+const CategoryManager = ({ customCats, onAdd, onRemove }) => {
+  const [newName, setNewName] = useState("");
+  const [newEmoji, setNewEmoji] = useState("🍽️");
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleAdd = () => {
+    setError("");
+    if (!newName.trim()) { setError("Podaj nazwę kategorii"); return; }
+    const ok = onAdd(newName, newEmoji);
+    if (!ok) { setError("Taka kategoria już istnieje"); return; }
+    setNewName("");
+    setNewEmoji("🍽️");
+  };
+
+  return (
+    <div className="card" style={{ padding: 20 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14 }}>
+        <GridIcon size={22} color={COLORS.primary} />
+        <div>
+          <h3 style={{ fontSize: 16, fontWeight: 700 }}>Kategorie</h3>
+          <p style={{ fontSize: 13, color: COLORS.textMuted, marginTop: 2 }}>Dodawaj własne kategorie dań</p>
+        </div>
+      </div>
+
+      {/* Default categories */}
+      <div style={{ marginBottom: 14 }}>
+        <p style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: 600, marginBottom: 6 }}>Domyślne:</p>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {DEFAULT_CATEGORIES.map((c) => (
+            <span key={c.value} className="tag" style={{ fontSize: 12 }}>{c.emoji} {c.value}</span>
+          ))}
+        </div>
+      </div>
+
+      {/* Custom categories */}
+      {customCats.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <p style={{ fontSize: 12, color: COLORS.textMuted, fontWeight: 600, marginBottom: 6 }}>Własne:</p>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+            {customCats.map((c) => (
+              <span key={c.value} className="tag tag-primary" style={{ fontSize: 12, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                {c.emoji} {c.value}
+                <button
+                  onClick={() => onRemove(c.value)}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", marginLeft: 2 }}
+                >
+                  <XIcon size={12} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add new */}
+      <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+        <div style={{ position: "relative" }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            style={{ fontSize: 18, padding: "4px 10px", minWidth: 40 }}
+            onClick={() => setShowEmojiPicker(!showEmojiPicker)}
+          >
+            {newEmoji}
+          </button>
+          {showEmojiPicker && (
+            <div
+              className="card pop-in"
+              style={{
+                position: "absolute", bottom: "100%", left: 0, marginBottom: 6,
+                padding: 10, display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 4,
+                zIndex: 10, width: 200,
+              }}
+            >
+              {EMOJI_SUGGESTIONS.map((em) => (
+                <button
+                  key={em}
+                  style={{ fontSize: 20, background: newEmoji === em ? COLORS.primaryPale : "none", border: "none", cursor: "pointer", borderRadius: 8, padding: 4 }}
+                  onClick={() => { setNewEmoji(em); setShowEmojiPicker(false); }}
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        <input
+          className="input"
+          style={{ flex: 1, minWidth: 140, padding: "6px 12px" }}
+          value={newName}
+          onChange={(e) => { setNewName(e.target.value); setError(""); }}
+          onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
+          placeholder="Nazwa kategorii..."
+        />
+        <button className="btn btn-sm btn-primary" onClick={handleAdd}>
+          <PlusIcon size={16} /> Dodaj
+        </button>
+      </div>
+      {error && <p style={{ fontSize: 12, color: "#c44", marginTop: 6 }}>{error}</p>}
+    </div>
+  );
+};
+
+// ============================================================
 // MAIN APP
 // ============================================================
 export default function App() {
@@ -2229,10 +2351,33 @@ export default function App() {
   const [knownIngredients, setKnownIngredients] = useState([]);
   const [loading, setLoading] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [importStatus, setImportStatus] = useState(null); // { type: "success"|"error", message }
+  const [importStatus, setImportStatus] = useState(null);
   const fileInputRef = useRef(null);
   const [deferredPrompt, setDeferredPrompt] = useState(null);
   const [showInstallBanner, setShowInstallBanner] = useState(false);
+  const [customCats, setCustomCats] = useState(loadCustomCategories());
+
+  // Keep global CATEGORIES in sync
+  useEffect(() => {
+    CATEGORIES = [...DEFAULT_CATEGORIES, ...customCats];
+  }, [customCats]);
+
+  const addCustomCategory = (name, emoji) => {
+    const value = name.trim().toLowerCase();
+    if (!value || CATEGORIES.find((c) => c.value === value)) return false;
+    const em = emoji || "🍽️";
+    const newCat = { value, label: `${em} ${name.trim()}`, emoji: em, custom: true };
+    const updated = [...customCats, newCat];
+    setCustomCats(updated);
+    saveCustomCategories(updated);
+    return true;
+  };
+
+  const removeCustomCategory = (value) => {
+    const updated = customCats.filter((c) => c.value !== value);
+    setCustomCats(updated);
+    saveCustomCategories(updated);
+  };
 
   // PWA install prompt
   useEffect(() => {
@@ -2340,6 +2485,7 @@ export default function App() {
       recipes: allRecipes,
       weekPlans: allPlans,
       knownIngredients: allIngredients,
+      customCategories: customCats,
     };
     const json = JSON.stringify(data, null, 2);
     const blob = new Blob([json], { type: "application/json" });
@@ -2401,6 +2547,12 @@ export default function App() {
       setRecipes(newRecipes);
       await loadWeekPlan(weekMonday);
       await refreshKnownIngredients();
+
+      // Import custom categories if present
+      if (data.customCategories?.length) {
+        setCustomCats(data.customCategories);
+        saveCustomCategories(data.customCategories);
+      }
 
       setImportStatus({ type: "success", message: `Zaimportowano ${recipeCount} przepisów i ${planCount} planów!` });
       setTimeout(() => setImportStatus(null), 4000);
@@ -2527,6 +2679,13 @@ export default function App() {
               <TrashIcon size={16} /> Wyczyść wszystko
             </button>
           </div>
+
+          {/* Custom categories */}
+          <CategoryManager
+            customCats={customCats}
+            onAdd={addCustomCategory}
+            onRemove={removeCustomCategory}
+          />
 
           {/* Info */}
           <div style={{ fontSize: 12, color: COLORS.textMuted, textAlign: "center", padding: "8px 0" }}>
